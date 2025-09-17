@@ -1,0 +1,24 @@
+task_ingest:
+    description: Take in the data provided and output a dataframe.  Use pd.read_csv to read in the {data_set}
+    expected_output: JSON or dict-like data structure.
+    agent: ingestion_agent
+
+task_clean:
+    description: Validate and clean the dataset produced by the ingestion agent. Handle missing values, normalize formats, and flag anomalies.
+    expected_output: Clean, validated dataset ready for analysis.
+    agent: cleaning_agent
+
+task_analyze:
+    description: Perform analysis on the dataset cleaned by the cleaning agent. Find trends, anomalies, and business drivers
+    expected_output: Structured analysis results (metrics, trends, drivers
+    agent: analysis_agent
+
+task_insight:
+    description: Convert analysis results from the analysis agent into concise executive insights with recommendations
+    expected_output: Bullet-point executive summary with action items
+    agent: executive_insights_agent
+
+task_present:
+    description: Format insights into an executive-ready presentation (pptx) and/or report.
+    expected_output: PowerPoint deck, PDF report, or dashboard JSON
+    agent: presentation_agent
