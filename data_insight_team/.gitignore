@@ -1,3 +1,6 @@
 .env
+.csv
+.pptx
+.ppt
 __pycache__/
 .DS_Store
