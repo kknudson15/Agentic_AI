@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3, yaml, io, re, difflib
 from datetime import datetime
 from html import escape
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 
@@ -18,14 +18,13 @@ CREATE TABLE IF NOT EXISTS job_configs (
     config_yaml TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     version INTEGER,
-    auto_fixed BOOLEAN DEFAULT 0,
     governance_score INTEGER
 )
 """)
 conn.commit()
 
 # --- LLM Setup ---
-llm = ChatOpenAI(model="gpt-4o-mini")
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # --- Prompts ---
 gen_prompt = ChatPromptTemplate.from_template("""
@@ -33,7 +32,22 @@ You are a pipeline config generator.
 Job description: {job_description}
 Past configs for context:
 {context}
-Generate a YAML config.
+Use this format to generate the config: Generate a pipeline config in YAML with these exact fields and format:
+
+job_name: <string>
+description: <string>
+source:
+  type: <"database"|"api">
+  connection_string: <string>
+destination:
+  type: <"database"|"csv">
+  table: <string>
+schedule: <cron string>
+parameters:
+  retries: <integer>
+  batch_size: <integer>
+
+Output raw YAML only, no markdown fences.
 """)
 
 analyze_prompt = ChatPromptTemplate.from_template("""
@@ -49,12 +63,9 @@ Provide:
 4. Governance score (1-10)
 """)
 
-fix_prompt = ChatPromptTemplate.from_template("""
-You are a pipeline auto-fixer.
-Based on the analysis, output ONLY a corrected YAML config.
-Analysis:
-{analysis}
-""")
+# --- Helper to strip YAML fences ---
+def strip_yaml_fences(yaml_str: str) -> str:
+    return re.sub(r"^```(yaml)?\s*|```$", "", yaml_str.strip(), flags=re.MULTILINE)
 
 # --- Retrieval ---
 def retrieve_similar_configs(job_description: str, top_n: int = 3):
@@ -63,14 +74,20 @@ def retrieve_similar_configs(job_description: str, top_n: int = 3):
     rows = cursor.fetchall()
     scored = []
     for job_name, cfg in rows:
+        job_name = job_name or ""
+        cfg = cfg or ""
         score = sum(1 for kw in keywords if kw in cfg.lower())
-        if score > 0:
-            scored.append((score, job_name, cfg))
-    scored.sort(reverse=True)
+        scored.append((score, job_name, cfg))
+    scored.sort(key=lambda x: x[0], reverse=True)
     return scored[:top_n]
 
-# --- Workflow functions ---
+# --- Workflow ---
 def run_workflow(job_description: str):
+    past_table = None
+    dest_table = None
+    past_schedule = None
+    schedule = None
+    
     past_configs = retrieve_similar_configs(job_description)
     context_str = "\n\n".join([f"Job: {j}\nConfig:\n{c}" for _, j, c in past_configs])
     if not context_str:
@@ -78,7 +95,7 @@ def run_workflow(job_description: str):
 
     # Generate YAML
     resp = (gen_prompt | llm).invoke({"job_description": job_description, "context": context_str})
-    original_yaml = resp.content.strip()
+    original_yaml = strip_yaml_fences(resp.content.strip())
 
     # Conflict detection
     conflicts = []
@@ -91,7 +108,7 @@ def run_workflow(job_description: str):
 
     for _, job_name, cfg in past_configs:
         try:
-            parsed_cfg = yaml.safe_load(cfg)
+            parsed_cfg = yaml.safe_load(strip_yaml_fences(cfg))
         except:
             continue
         past_table = parsed_cfg.get("destination", {}).get("table")
@@ -107,111 +124,99 @@ def run_workflow(job_description: str):
     resp = (analyze_prompt | llm).invoke({"cfg": original_yaml, "conflicts": "\n".join(conflicts)})
     analysis = resp.content.strip()
 
-    # Auto-fix
-    resp = (fix_prompt | llm).invoke({"analysis": analysis})
-    fixed_yaml = resp.content.strip()
-
-    return context_str, original_yaml, conflicts, analysis, fixed_yaml
+    return context_str, original_yaml, conflicts, analysis
 
 # --- Governance Score Extractor ---
 def extract_score(analysis: str) -> int:
-    match = re.search(r"(\d+)\s*/?\s*10", analysis)
+    match = re.search(r"(\d{1,2})\s*(?:/10| out of 10)?", analysis)
     if match:
         return int(match.group(1))
     return None
 
 # --- Save Configs ---
-def save_configs(job_name: str, original_yaml: str, fixed_yaml: str, analysis: str):
+def save_configs(job_name: str, original_yaml: str, analysis: str):
     cursor.execute("SELECT MAX(version) FROM job_configs WHERE job_name = ?", (job_name,))
-    last_version = cursor.fetchone()[0]
-    version = (last_version + 1) if last_version else 1
+    last_version_row = cursor.fetchone()
+    last_version = last_version_row[0] if last_version_row and last_version_row[0] is not None else 0
+    version = last_version + 1
 
     score = extract_score(analysis)
 
     cursor.execute(
-        "INSERT INTO job_configs (job_name, config_yaml, version, auto_fixed, governance_score) VALUES (?, ?, ?, 0, ?)",
+        "INSERT INTO job_configs (job_name, config_yaml, version, governance_score) VALUES (?, ?, ?, ?)",
         (job_name, original_yaml, version, score)
-    )
-    cursor.execute(
-        "INSERT INTO job_configs (job_name, config_yaml, version, auto_fixed, governance_score) VALUES (?, ?, ?, 1, ?)",
-        (job_name, fixed_yaml, version, score)
     )
     conn.commit()
     return version
 
-# --- Diff Helpers ---
-def yaml_diff_html(cfg1: str, cfg2: str) -> str:
-    diff = difflib.ndiff(cfg1.splitlines(), cfg2.splitlines())
-    html_lines = []
-    for line in diff:
-        if line.startswith("+ "):
-            html_lines.append(f"<div style='background-color:#e6ffed;color:#22863a;'>+ {escape(line[2:])}</div>")
-        elif line.startswith("- "):
-            html_lines.append(f"<div style='background-color:#ffeef0;color:#b31d28;'>- {escape(line[2:])}</div>")
-        elif line.startswith("? "):
-            continue
-        else:
-            html_lines.append(f"<div style='background-color:#f6f8fa;color:#24292e;'>{escape(line[2:])}</div>")
-    return "<pre style='font-family:monospace;'>" + "\n".join(html_lines) + "</pre>"
-
-def export_yaml(config: str, filename: str):
-    return io.BytesIO(config.encode("utf-8")), filename
-
-def export_diff(cfg1: str, cfg2: str, job_choice: str, v1: int, v2: int):
-    diff_plain = difflib.unified_diff(
-        cfg1.splitlines(), cfg2.splitlines(),
-        fromfile=f"{job_choice}_v{v1}", tofile=f"{job_choice}_v{v2}", lineterm=""
-    )
-    diff_text = "\n".join(diff_plain)
-    return io.BytesIO(diff_text.encode("utf-8")), f"{job_choice}_diff_v{v1}_vs_v{v2}.md"
-
 # --- Streamlit App ---
-st.title("🛠️ Data Pipeline Config Governance Assistant")
+st.title("Data Pipeline Config Governance Assistant")
 
-tab1, tab2 = st.tabs(["⚡ Generate Config", "📜 Config History"])
+tab1, tab2 = st.tabs(["Generate Config", "Config History"])
 
+# --- Generate Config tab ---
 with tab1:
     st.header("Generate New Config")
     job_description = st.text_area("Enter Job Description", height=150)
 
-    if st.button("Generate Config"):
+    if st.button("Generate Config", key="generate_config"):
         with st.spinner("Generating and analyzing config..."):
-            context, original_yaml, conflicts, analysis, fixed_yaml = run_workflow(job_description)
+            context, original_yaml, conflicts, analysis = run_workflow(job_description)
 
+            st.session_state['original_yaml'] = original_yaml
+            st.session_state['analysis'] = analysis
+            st.session_state['context'] = context
+            st.session_state['conflicts'] = conflicts
+
+            # --- Determine job name ---
+            try:
+                suggested_name = yaml.safe_load(original_yaml).get("job_name")
+            except:
+                suggested_name = None
+
+            if not suggested_name:
+                suggested_name = f"job_{datetime.now().strftime('%Y%m%d')}"
+            st.session_state['job_name'] = st.text_input("Enter Job Name", value=suggested_name)
+
+    if 'original_yaml' in st.session_state:
         st.subheader("🔎 Retrieved Past Configs")
-        st.code(context, language="yaml")
+        st.code(st.session_state['context'], language="yaml")
 
-        st.subheader("📄 Original Config")
-        st.code(original_yaml, language="yaml")
+        st.subheader("📄 Generated Config")
+        st.code(st.session_state['original_yaml'], language="yaml")
 
         st.subheader("⚠️ Conflicts")
-        for c in conflicts:
-            st.error(c) if "conflict" in c.lower() else st.success(c)
+        for c in st.session_state.get('conflicts', []):
+            if "conflict" in c.lower():
+                st.error(c)
+            else:
+                st.success(c)
 
         st.subheader("✅ Governance Analysis")
-        st.text(analysis)
-
-        st.subheader("🛠️ Auto-Fixed Config")
-        st.code(fixed_yaml, language="yaml")
-
-        # Extract job name
-        try:
-            job_name = yaml.safe_load(fixed_yaml).get("job_name", f"job_{datetime.now().strftime('%Y%m%d%H%M')}")
-        except:
-            job_name = f"job_{datetime.now().strftime('%Y%m%d%H%M')}"
+        st.text(st.session_state['analysis'])
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("✅ Approve & Save"):
-                version = save_configs(job_name, original_yaml, fixed_yaml, analysis)
-                st.success(f"Saved job '{job_name}' v{version} (with auto-fix).")
-        with col2:
-            if st.button("❌ Reject"):
-                st.warning("Config rejected. Nothing saved.")
+            if st.button("✅ Approve & Save", key="approve_save"):
+                version = save_configs(
+                    st.session_state['job_name'],
+                    st.session_state['original_yaml'],
+                    st.session_state['analysis']
+                )
+                st.success(f"Saved job '{st.session_state['job_name']}' v{version}.")
+                # Clear session state after save
+                for key in ['original_yaml', 'analysis', 'context', 'conflicts', 'job_name']:
+                    st.session_state.pop(key, None)
 
+        with col2:
+            if st.button("❌ Reject", key="reject_save"):
+                st.warning("Config rejected. Nothing saved.")
+                # Clear session state after reject
+                for key in ['original_yaml', 'analysis', 'context', 'conflicts', 'job_name']:
+                    st.session_state.pop(key, None)
+# --- Config History Tab ---
 with tab2:
     st.header("📜 Config History Dashboard")
-
     search = st.text_input("🔍 Search by job name")
     cursor.execute("""
         SELECT DISTINCT job_name FROM job_configs
@@ -224,70 +229,18 @@ with tab2:
         job_choice = st.selectbox("Select Job", job_names)
 
         cursor.execute("""
-            SELECT version, auto_fixed, governance_score, created_at, config_yaml
+            SELECT version, governance_score, created_at, config_yaml
             FROM job_configs
             WHERE job_name = ?
-            ORDER BY version DESC, auto_fixed ASC
+            ORDER BY version DESC
         """, (job_choice,))
         versions = cursor.fetchall()
 
         st.subheader("📦 Versions")
-        for v, auto_fixed, score, created_at, cfg in versions:
-            with st.expander(f"v{v} ({'Auto-fixed' if auto_fixed else 'Original'})"):
+        for v, score, created_at, cfg in versions:
+            with st.expander(f"v{v}"):
                 st.write(f"🕒 {created_at}")
                 st.write(f"📊 Governance Score: {score if score else 'N/A'} / 10")
                 st.code(cfg, language="yaml")
-
-        st.subheader("🔀 Compare Versions")
-        version_options = sorted(set(v[0] for v in versions), reverse=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            v1 = st.selectbox("Version A", version_options, key="v1")
-        with col2:
-            v2 = st.selectbox("Version B", version_options, key="v2")
-
-        if v1 and v2 and v1 != v2:
-            cursor.execute("""
-                SELECT config_yaml FROM job_configs
-                WHERE job_name = ? AND version = ? AND auto_fixed = 0
-            """, (job_choice, v1))
-            cfg1 = cursor.fetchone()[0]
-
-            cursor.execute("""
-                SELECT config_yaml FROM job_configs
-                WHERE job_name = ? AND version = ? AND auto_fixed = 1
-            """, (job_choice, v2))
-            cfg2 = cursor.fetchone()[0]
-
-            view_mode = st.radio("Choose comparison view:", ["📝 Side-by-Side YAML", "📊 Inline Diff (highlighted)"])
-
-            if view_mode == "📝 Side-by-Side YAML":
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"**Version {v1} (Original)**")
-                    st.code(cfg1, language="yaml")
-                with col2:
-                    st.markdown(f"**Version {v2} (Auto-fixed)**")
-                    st.code(cfg2, language="yaml")
-
-            elif view_mode == "📊 Inline Diff (highlighted)":
-                diff_output_html = yaml_diff_html(cfg1, cfg2)
-                st.markdown(diff_output_html, unsafe_allow_html=True)
-
-            # Export buttons
-            st.subheader("⬇️ Export Options")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                yaml_file, yaml_name = export_yaml(cfg1, f"{job_choice}_v{v1}_original.yaml")
-                st.download_button("📥 Export Version A (YAML)", data=yaml_file, file_name=yaml_name, mime="text/yaml")
-            with col2:
-                yaml_file, yaml_name = export_yaml(cfg2, f"{job_choice}_v{v2}_autofixed.yaml")
-                st.download_button("📥 Export Version B (YAML)", data=yaml_file, file_name=yaml_name, mime="text/yaml")
-            with col3:
-                if view_mode == "📊 Inline Diff (highlighted)":
-                    diff_file, diff_name = export_diff(cfg1, cfg2, job_choice, v1, v2)
-                    st.download_button("📥 Export Diff (MD)", data=diff_file, file_name=diff_name, mime="text/markdown")
-        else:
-            st.info("Select two different versions to compare.")
     else:
         st.info("No jobs found. Try generating a config first.")
