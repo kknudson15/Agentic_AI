@@ -6,115 +6,130 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 min-h-screen p-6 text-gray-100">
-  <div class="max-w-6xl mx-auto bg-gray-800 p-8 rounded-xl shadow-2xl">
-    <h1 class="text-3xl font-bold mb-6">Audit Report ({{ db_choice }})</h1>
+  <div class="max-w-6xl mx-auto bg-gradient-to-b from-gray-900 to-gray-800 p-8 rounded-xl shadow-2xl">
 
-    <!-- Spinner -->
-    <div id="loading" class="hidden flex items-center mb-4">
-      <svg class="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+    <h1 class="text-3xl font-bold mb-6 flex items-center">
+      <svg class="h-7 w-7 mr-2 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M2 5h16v10H2V5z"/>
       </svg>
-      <span class="ml-2 text-gray-200">Applying fixes...</span>
+      Audit Report ({{ db_choice }})
+    </h1>
+
+    <!-- Status Banner -->
+    <p id="status-banner" class="bg-green-700 text-green-100 p-2 rounded mb-4 hidden"></p>
+
+    <!-- Audit Report Card -->
+    <div class="bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xl font-semibold flex items-center">
+          <svg class="h-5 w-5 mr-2 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 5h16v10H2V5z"/>
+          </svg>
+          Audit Report
+        </h2>
+        <button onclick="copyToClipboard('audit-report')" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-white transition transform hover:scale-105">Copy Report</button>
+      </div>
+      <pre id="audit-report" class="bg-gray-700 p-4 rounded mb-6 text-gray-100 overflow-x-auto whitespace-pre-wrap break-words">{{ audit_report }}</pre>
     </div>
 
-    <!-- Audit Report -->
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-xl font-semibold">Audit Report</h2>
-      <button onclick="copyToClipboard('audit-report')" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-white">Copy Report</button>
-    </div>
-    <pre id="audit-report" class="bg-gray-700 p-4 rounded mb-6 text-gray-100 overflow-x-auto whitespace-pre-wrap break-words">{{ audit_report }}</pre>
-    <!-- Original Data -->
-    <button onclick="toggleTable('original')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded mb-2">Toggle Original Data</button>
-    <div id="original" class="overflow-x-auto mb-6">
-      {% if original_preview %}
-      <table class="table-auto border-collapse w-full">
-        <thead>
-          <tr class="bg-gray-700 text-gray-100">
-            {% for key in original_preview[0].keys() %}
-            <th class="border px-4 py-2 text-left">{{ key }}</th>
+    <!-- Original Data Card -->
+    <div class="bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+      <button onclick="toggleTable('original')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded mb-2 transition transform hover:scale-105">Toggle Original Data</button>
+      <div id="original" class="overflow-x-auto max-h-96 scroll-smooth">
+        {% if original_preview %}
+        <table class="table-auto border-collapse w-full">
+          <thead>
+            <tr class="bg-gray-700 text-gray-100">
+              {% for key in original_preview[0].keys() %}
+              <th class="border px-4 py-2 text-left">{{ key }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in original_preview %}
+            <tr class="hover:bg-gray-700 transition-colors">
+              {% for val in row.values() %}
+              <td class="border px-4 py-2 {% if val == None or val == '' %}bg-red-600 text-white{% endif %}">{{ val }}</td>
+              {% endfor %}
+            </tr>
             {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in original_preview %}
-          <tr class="hover:bg-gray-700">
-            {% for val in row.values() %}
-            <td class="border px-4 py-2 {% if val == None or val == '' %}bg-red-600 text-white{% endif %}">{{ val }}</td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="text-gray-400 mb-6">No original data available.</p>
-      {% endif %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-400 mb-6">No original data available.</p>
+        {% endif %}
+      </div>
     </div>
 
-    <!-- Fixed Data -->
-    <button onclick="toggleTable('fixed')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded mb-2">Toggle Fixed Data</button>
-    <div id="fixed" class="overflow-x-auto mb-6">
-      {% if fixed_preview %}
-      <table class="table-auto border-collapse w-full">
-        <thead>
-          <tr class="bg-gray-700 text-gray-100">
-            {% for key in fixed_preview[0].keys() %}
-            <th class="border px-4 py-2 text-left">{{ key }}</th>
+    <!-- Fixed Data Card -->
+    <div class="bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+      <button onclick="toggleTable('fixed')" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded mb-2 transition transform hover:scale-105">Toggle Fixed Data</button>
+      <div id="fixed" class="overflow-x-auto max-h-96 scroll-smooth">
+        {% if fixed_preview %}
+        <table class="table-auto border-collapse w-full">
+          <thead>
+            <tr class="bg-gray-700 text-gray-100">
+              {% for key in fixed_preview[0].keys() %}
+              <th class="border px-4 py-2 text-left">{{ key }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in fixed_preview %}
+            <tr class="hover:bg-gray-700 transition-colors">
+              {% for val in row.values() %}
+              <td class="border px-4 py-2 {% if val == None or val == '' %}bg-red-600 text-white{% else %}bg-green-700 text-white{% endif %}">{{ val }}</td>
+              {% endfor %}
+            </tr>
             {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in fixed_preview %}
-          <tr class="hover:bg-gray-700">
-            {% for val in row.values() %}
-            <td class="border px-4 py-2 {% if val == None or val == '' %}bg-red-600 text-white{% else %}bg-green-700 text-white{% endif %}">{{ val }}</td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="text-gray-400 mb-6">No fixed data available.</p>
-      {% endif %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-400 mb-6">No fixed data available.</p>
+        {% endif %}
+      </div>
     </div>
 
-    <!-- Fixes Code -->
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-xl font-semibold">Fixes Code</h2>
-      <button onclick="copyToClipboard('fixes-code')" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-white">Copy Fixes</button>
+    <!-- Fixes Code Card -->
+    <div class="bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xl font-semibold flex items-center">
+          <svg class="h-5 w-5 mr-2 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 5h16v10H2V5z"/>
+          </svg>
+          Fixes Code
+        </h2>
+        <button onclick="copyToClipboard('fixes-code')" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-white transition transform hover:scale-105">Copy Fixes</button>
+      </div>
+      <pre id="fixes-code" class="bg-gray-700 p-4 rounded mb-6 text-gray-100 overflow-x-auto whitespace-pre-wrap break-words">{{ fixes_code }}</pre>
     </div>
-    <pre id="fixes-code" class="bg-gray-700 p-4 rounded mb-6 text-gray-100 overflow-x-auto whitespace-pre-wrap break-words">{{ fixes_code }}</pre>
 
-    <!-- Apply Fixes Button -->
-    <button onclick="applyFixes()" class="bg-green-600 hover:bg-green-700 py-2 px-4 rounded transition mb-2">Apply Fixes to Production</button>
+    <button onclick="applyFixes()" class="bg-green-600 hover:bg-green-700 py-2 px-4 rounded transition transform hover:scale-105 mb-2">Apply Fixes to Production</button>
     <p id="apply-status" class="mt-2 text-gray-200"></p>
 
   </div>
 
   <script>
-    // Copy to clipboard
     function copyToClipboard(id) {
       const text = document.getElementById(id).innerText;
       navigator.clipboard.writeText(text).then(() => alert("Copied to clipboard!"));
     }
 
-    // Toggle collapsible tables
     function toggleTable(id) {
       const el = document.getElementById(id);
       el.style.display = (el.style.display === "none") ? "block" : "none";
     }
 
-    // Apply fixes (mock session-only)
     async function applyFixes() {
-      document.getElementById("loading").classList.remove("hidden");
+      const status = document.getElementById("apply-status");
+      status.innerText = "Applying fixes...";
       const res = await fetch("/apply_fixes", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ db_choice: "{{ db_choice }}" })
       });
       const data = await res.json();
-      document.getElementById("apply-status").innerText = data.status;
-      document.getElementById("loading").classList.add("hidden");
+      status.innerText = data.status;
     }
   </script>
 </body>
