@@ -1,0 +1,7 @@
+openai>=1.0.0
+openai-agents
+streamlit
+pandas
+sqlalchemy
+python-dotenv
+prefect>=2.9
