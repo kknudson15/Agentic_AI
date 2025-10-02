@@ -1,0 +1,10 @@
+streamlit>=1.20.0
+requests>=2.28.0
+fastapi
+uvicorn
+langchain
+openai
+chromadb
+pydantic
+python-multipart
+rank-bm25whihc

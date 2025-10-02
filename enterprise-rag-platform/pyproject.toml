@@ -1,0 +1,23 @@
+[project]
+name = "enterprise-rag-platform"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "chromadb>=1.1.0",
+    "fastapi>=0.118.0",
+    "langchain>=0.3.27",
+    "langchain-community>=0.3.30",
+    "langchain-openai>=0.3.34",
+    "openai>=2.0.0",
+    "pdfplumber>=0.11.7",
+    "pydantic>=2.11.9",
+    "python-docx>=1.2.0",
+    "python-dotenv>=1.1.1",
+    "python-multipart>=0.0.20",
+    "rank-bm25>=0.2.2",
+    "requests>=2.28.0",
+    "streamlit>=1.20.0",
+    "uvicorn>=0.37.0",
+]
