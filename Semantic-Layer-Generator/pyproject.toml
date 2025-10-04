@@ -1,0 +1,13 @@
+[project]
+name = "semantic-layer-generator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain-community>=0.3.30",
+    "pandas>=2.3.3",
+    "pyyaml>=6.0.3",
+    "snowflake-snowpark-python>=1.39.1",
+    "streamlit>=1.50.0",
+]
