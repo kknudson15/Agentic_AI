@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+openai
+sqlparse
+pydantic
+pyyaml
+snowflake-connector-python

@@ -1,0 +1,20 @@
+entities:
+  customer:
+    table: customers
+    fields:
+      id: customer_id
+      name: customer_name
+      region: region
+  order:
+    table: orders
+    fields:
+      id: order_id
+      customer_id: customer_id
+      date: order_date
+      amount: order_amount
+metrics:
+  total_revenue: SUM(orders.order_amount)
+  avg_order_value: AVG(orders.order_amount)
+relationships:
+  - from: orders.customer_id
+    to: customers.customer_id
